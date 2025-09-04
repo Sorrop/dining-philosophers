@@ -1,7 +1,7 @@
 use core::time;
 use std::{sync::{Arc, Mutex}, thread, time::{Duration, SystemTime}};
 use rand::Rng;
-use clap::{Parser};
+use clap::Parser;
 
 #[derive(Debug)]
 struct Chopstick {
@@ -22,6 +22,14 @@ struct Philosopher {
     times_fed: Arc<Mutex<u64>>
 }
 
+#[derive(Debug)]
+enum Event {
+    Thinking(usize),
+    Eating(usize,usize, usize),
+    TryingToEat(usize),
+    FinishedEating(usize)
+}
+
 impl Philosopher {
     fn new(
         id: usize,
@@ -36,33 +44,42 @@ impl Philosopher {
         }
     }
 
-    fn think(&self, max_think_duration: u64) {
+    fn think(&self, max_think_duration: u64, events: Arc<Mutex<Vec<Event>>>) {
         let millis = rand_sleep_duration(max_think_duration);
-        println!("{} is thinking", self.id);
+        let mut es = events.lock().unwrap();
+        es.push(Event::Thinking(self.id));
+        drop(es);
         thread::sleep(millis)
     }
 
-    fn eat(&self, max_eat_duration: u64, left_id: usize, right_id: usize) {
+    fn eat(&self, max_eat_duration: u64, left_id: usize, right_id: usize, events: Arc<Mutex<Vec<Event>>>) {
         let millis = rand_sleep_duration(max_eat_duration);
-        println!("{} is eating with {:?} and {:?}", self.id, left_id, right_id);
+        let mut es = events.lock().unwrap();
+        es.push(Event::Eating(self.id, left_id, right_id));
+        drop(es);
         thread::sleep(millis)
     }
 
-    fn try_to_eat(&self, max_eat_duration: u64) -> bool {
+    fn try_to_eat(&self, max_eat_duration: u64, events: Arc<Mutex<Vec<Event>>>) {
+        let mut es = events.lock().unwrap();
+        es.push(Event::TryingToEat(self.id));
+        drop(es);
+
         let locked_left = self.left_chopstick.try_lock();
         let locked_right = self.right_chopstick.try_lock();
+
         if let Ok(left_guard) = locked_left {
             if let Ok(right_guard) = locked_right {
-                self.eat(max_eat_duration, left_guard.id, right_guard.id);
+                self.eat(max_eat_duration, left_guard.id, right_guard.id, events.clone());
                 let mut t = self.times_fed.lock().unwrap();
                 *t += 1;
                 drop(right_guard);
                 drop(left_guard);
-                println!("{} finished eating", self.id);
-                return true
+                let mut es = events.lock().unwrap();
+                es.push(Event::FinishedEating(self.id));
+                drop(es);
             }
         }
-        return false
     }
 }
 
@@ -104,7 +121,11 @@ struct Cli {
 
     /// Eating max duration (in millis)
     #[arg(short, long, default_value_t = 5000)]
-    eat: u64
+    eat: u64,
+
+    /// Analyze results
+    #[arg(short, long, default_value_t = false)]
+    analyze: bool
 
 }
 
@@ -123,13 +144,16 @@ fn main() {
             ));
     }
 
-    let stats: Vec<_> = philosophers.iter().map(|p| (p.id, p.times_fed.clone())).collect();
+    let events = Arc::new(Mutex::new(Vec::new()));
 
     let timeout = Duration::new(cli.duration, 0);
     let now = SystemTime::now();
 
+    println!("Simulating....");
+
     thread::scope (|scope| {
         for p in philosophers {
+            let events = events.clone();
             scope.spawn(move || {
                 loop {
                     if let Ok(elapsed) = now.elapsed() {
@@ -140,18 +164,20 @@ fn main() {
                         eprintln!("Error getting system time");
                         break;
                     }
-                    p.think(cli.think);
+                    p.think(cli.think, events.clone());
                     if is_hungry() {
-                        println!("{} is trying to eat", p.id);
-                        p.try_to_eat(cli.eat);
+                        p.try_to_eat(cli.eat, events.clone());
                     }
                 }
             });
         }
     });
 
-    println!("--------- Results ---------");
-    for (id, times_fed) in stats {
-        println!("{} ate {} times", id, times_fed.lock().unwrap());
+    // TODO: Analysis
+
+    for e in events.lock().unwrap().iter() {
+        println!("{:?}", e);
     }
+
+
 }
