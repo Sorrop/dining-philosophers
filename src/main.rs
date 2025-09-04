@@ -37,21 +37,14 @@ impl Philosopher {
     }
 
     fn think(&self, max_think_duration: u64) {
-        let mut rng = rand::rng();
-        let interval = rng.random_range(1..=max_think_duration);
-        let millis = time::Duration::from_millis(interval);
-        println!("{} is thinking...", self.id);
+        let millis = rand_sleep_duration(max_think_duration);
+        println!("{} is thinking", self.id);
         thread::sleep(millis)
     }
 
     fn eat(&self, max_eat_duration: u64, left_id: usize, right_id: usize) {
-        let mut rng = rand::rng();
-        let interval = rng.random_range(1..=max_eat_duration);
-        let millis = time::Duration::from_millis(interval);
-        println!("{} is eating with {:?} and {:?}",
-                 self.id,
-                 left_id,
-                 right_id);
+        let millis = rand_sleep_duration(max_eat_duration);
+        println!("{} is eating with {:?} and {:?}", self.id, left_id, right_id);
         thread::sleep(millis)
     }
 
@@ -71,6 +64,12 @@ impl Philosopher {
         }
         return false
     }
+}
+
+fn rand_sleep_duration(max_millis: u64) -> time::Duration {
+    let mut rng = rand::rng();
+    let interval = rng.random_range(1..=max_millis);
+    time::Duration::from_millis(interval)
 }
 
 fn n_chopsticks(n: usize) -> Vec<Arc<Mutex<Chopstick>>> {
