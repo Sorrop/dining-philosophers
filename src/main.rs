@@ -1,6 +1,7 @@
 use core::time;
 use std::{sync::{Arc, Mutex}, thread, time::{Duration, SystemTime}};
 use rand::Rng;
+use clap::{Parser};
 
 #[derive(Debug)]
 struct Chopstick {
@@ -35,17 +36,17 @@ impl Philosopher {
         }
     }
 
-    fn think(&self) {
+    fn think(&self, max_think_duration: u64) {
         let mut rng = rand::rng();
-        let interval = rng.random_range(1..=5000);
+        let interval = rng.random_range(1..=max_think_duration);
         let millis = time::Duration::from_millis(interval);
         println!("{} is thinking...", self.id);
         thread::sleep(millis)
     }
 
-    fn eat(&self, left_id: usize, right_id: usize) {
+    fn eat(&self, max_eat_duration: u64, left_id: usize, right_id: usize) {
         let mut rng = rand::rng();
-        let interval = rng.random_range(1..=5000);
+        let interval = rng.random_range(1..=max_eat_duration);
         let millis = time::Duration::from_millis(interval);
         println!("{} is eating with {:?} and {:?}",
                  self.id,
@@ -54,12 +55,12 @@ impl Philosopher {
         thread::sleep(millis)
     }
 
-    fn try_to_eat(&self) -> bool {
+    fn try_to_eat(&self, max_eat_duration: u64) -> bool {
         let locked_left = self.left_chopstick.try_lock();
         let locked_right = self.right_chopstick.try_lock();
         if let Ok(left_guard) = locked_left {
             if let Ok(right_guard) = locked_right {
-                self.eat(left_guard.id, right_guard.id);
+                self.eat(max_eat_duration, left_guard.id, right_guard.id);
                 let mut t = self.times_fed.lock().unwrap();
                 *t += 1;
                 drop(right_guard);
@@ -85,8 +86,33 @@ fn is_hungry() -> bool {
     rng.random_bool(0.5)
 }
 
+#[derive(Parser)]
+#[clap(name = "dining-philosophers")]
+#[clap(version = "1.0")]
+#[clap(about = "Simulate the dining philosophers problem.", long_about = None)]
+struct Cli {
+    /// The number of philosphers and chopsticks
+    #[arg(short, long, default_value_t = 5)]
+    number: usize,
+
+    /// Simulation duration (in seconds)
+    #[arg(short, long, default_value_t = 60)]
+    duration: u64,
+
+    /// Thinking max duration (in millis)
+    #[arg(short, long, default_value_t = 5000)]
+    think: u64,
+
+    /// Eating max duration (in millis)
+    #[arg(short, long, default_value_t = 5000)]
+    eat: u64
+
+}
+
 fn main() {
-    let n: usize = 5;
+
+    let cli = Cli::parse();
+    let n: usize = cli.number;
     let chopsticks = n_chopsticks(n);
     let mut philosophers: Vec<Philosopher> = Vec::new();
     for i in 0..n {
@@ -100,7 +126,7 @@ fn main() {
 
     let stats: Vec<_> = philosophers.iter().map(|p| (p.id, p.times_fed.clone())).collect();
 
-    let timeout = Duration::new(60, 0);
+    let timeout = Duration::new(cli.duration, 0);
     let now = SystemTime::now();
 
     thread::scope (|scope| {
@@ -115,10 +141,10 @@ fn main() {
                         eprintln!("Error getting system time");
                         break;
                     }
-                    p.think();
+                    p.think(cli.think);
                     if is_hungry() {
                         println!("{} is trying to eat", p.id);
-                        p.try_to_eat();
+                        p.try_to_eat(cli.eat);
                     }
                 }
             });
