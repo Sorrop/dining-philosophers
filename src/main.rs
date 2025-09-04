@@ -3,6 +3,28 @@ use std::{sync::{Arc, Mutex}, thread, time::{Duration, SystemTime}};
 use rand::Rng;
 use clap::Parser;
 
+#[derive(Parser)]
+#[clap(name = "dining-philosophers")]
+#[clap(version = "1.0")]
+#[clap(about = "Simulate the dining philosophers problem.", long_about = None)]
+struct Cli {
+    /// The number of philosphers and chopsticks
+    #[arg(short, long, default_value_t = 5)]
+    number: usize,
+
+    /// Simulation duration (in seconds)
+    #[arg(short, long, default_value_t = 60)]
+    duration: u64,
+
+    /// Thinking max duration (in millis)
+    #[arg(short, long, default_value_t = 5000)]
+    think: u64,
+
+    /// Eating max duration (in millis)
+    #[arg(short, long, default_value_t = 5000)]
+    eat: u64,
+}
+
 #[derive(Debug)]
 struct Chopstick {
     id: usize,
@@ -60,6 +82,11 @@ impl Philosopher {
         thread::sleep(millis)
     }
 
+    fn is_hungry(&self) -> bool {
+        let mut rng = rand::rng();
+        rng.random_bool(0.5)
+    }
+
     fn try_to_eat(&self, max_eat_duration: u64, events: Arc<Mutex<Vec<Event>>>) {
         let mut es = events.lock().unwrap();
         es.push(Event::TryingToEat(self.id));
@@ -95,38 +122,6 @@ fn n_chopsticks(n: usize) -> Vec<Arc<Mutex<Chopstick>>> {
         out.push(Arc::new(Mutex::new(Chopstick::new(i))));
     }
     out
-}
-
-fn is_hungry() -> bool {
-    let mut rng = rand::rng();
-    rng.random_bool(0.5)
-}
-
-#[derive(Parser)]
-#[clap(name = "dining-philosophers")]
-#[clap(version = "1.0")]
-#[clap(about = "Simulate the dining philosophers problem.", long_about = None)]
-struct Cli {
-    /// The number of philosphers and chopsticks
-    #[arg(short, long, default_value_t = 5)]
-    number: usize,
-
-    /// Simulation duration (in seconds)
-    #[arg(short, long, default_value_t = 60)]
-    duration: u64,
-
-    /// Thinking max duration (in millis)
-    #[arg(short, long, default_value_t = 5000)]
-    think: u64,
-
-    /// Eating max duration (in millis)
-    #[arg(short, long, default_value_t = 5000)]
-    eat: u64,
-
-    /// Analyze results
-    #[arg(short, long, default_value_t = false)]
-    analyze: bool
-
 }
 
 fn main() {
@@ -165,7 +160,7 @@ fn main() {
                         break;
                     }
                     p.think(cli.think, events.clone());
-                    if is_hungry() {
+                    if p.is_hungry() {
                         p.try_to_eat(cli.eat, events.clone());
                     }
                 }
