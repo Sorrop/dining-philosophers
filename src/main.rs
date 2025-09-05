@@ -1,5 +1,5 @@
 use core::time;
-use std::{sync::{Arc, Mutex}, thread, time::{Duration, SystemTime}};
+use std::{collections::{HashMap, HashSet}, sync::{Arc, Mutex}, thread, time::{Duration, SystemTime}};
 use rand::Rng;
 use clap::Parser;
 
@@ -44,12 +44,11 @@ struct Philosopher {
     times_fed: Arc<Mutex<u64>>
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum Event {
     Thinking(usize),
-    Eating(usize,usize, usize),
-    TryingToEat(usize),
-    FinishedEating(usize)
+    Eating(usize, usize, usize),
+    FinishedEating(usize, usize, usize)
 }
 
 impl Philosopher {
@@ -88,22 +87,20 @@ impl Philosopher {
     }
 
     fn try_to_eat(&self, max_eat_duration: u64, events: Arc<Mutex<Vec<Event>>>) {
-        let mut es = events.lock().unwrap();
-        es.push(Event::TryingToEat(self.id));
-        drop(es);
-
         let locked_left = self.left_chopstick.try_lock();
         let locked_right = self.right_chopstick.try_lock();
 
         if let Ok(left_guard) = locked_left {
             if let Ok(right_guard) = locked_right {
-                self.eat(max_eat_duration, left_guard.id, right_guard.id, events.clone());
+                let left_id = left_guard.id;
+                let right_id = right_guard.id;
+                self.eat(max_eat_duration, left_id, right_id, events.clone());
                 let mut t = self.times_fed.lock().unwrap();
                 *t += 1;
                 drop(right_guard);
                 drop(left_guard);
                 let mut es = events.lock().unwrap();
-                es.push(Event::FinishedEating(self.id));
+                es.push(Event::FinishedEating(self.id, left_id, right_id));
                 drop(es);
             }
         }
@@ -122,6 +119,52 @@ fn n_chopsticks(n: usize) -> Vec<Arc<Mutex<Chopstick>>> {
         out.push(Arc::new(Mutex::new(Chopstick::new(i))));
     }
     out
+}
+
+fn analyze(events: Vec<Event>, n: usize) {
+    println!("Analyzing...");
+
+    let mut currently_eating: HashSet<(usize, usize, usize)> = HashSet::new();
+    let mut currently_thinking: HashSet<usize> = HashSet::new();
+    let mut discrepancies: Vec<(usize, usize, usize)> = Vec::new();
+    let mut times_fed: HashMap<usize, u64> = HashMap::new();
+
+    for (i, e) in events.iter().enumerate() {
+        match e {
+            Event::Thinking(v) => {
+                currently_thinking.insert(*v);
+            },
+            Event::Eating(v, left, right) => {
+                for (p, eating_left, eating_right) in currently_eating.iter() {
+                    if left == eating_left ||
+                       left == eating_right ||
+                       right == eating_left ||
+                       right == eating_right {
+                           discrepancies.push((i, *v, *p));
+                       }
+                }
+                currently_thinking.remove(v);
+                currently_eating.insert((*v, *left, *right));
+            },
+            Event::FinishedEating(v, left, right) => {
+                currently_eating.remove(&(*v, *left, *right));
+                times_fed.entry(*v).and_modify(|x| *x += 1).or_insert(1);
+            }
+        }
+    }
+
+    for i in 0..n {
+        println!("{} ate {} times", i, times_fed.get(&i).or(Some(&0)).unwrap());
+    }
+
+    if discrepancies.len() == 0 {
+        println!("Simulation correct");
+    } else {
+        println!("The following discrepancies were found:");
+        for d in discrepancies.iter() {
+            println!("{:?}", d);
+        }
+    }
 }
 
 fn main() {
@@ -168,11 +211,6 @@ fn main() {
         }
     });
 
-    // TODO: Analysis
-
-    for e in events.lock().unwrap().iter() {
-        println!("{:?}", e);
-    }
-
+    analyze(events.lock().unwrap().to_vec(), n);
 
 }
