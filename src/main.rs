@@ -97,10 +97,10 @@ impl Philosopher {
                 self.eat(max_eat_duration, left_id, right_id, events.clone());
                 let mut t = self.times_fed.lock().unwrap();
                 *t += 1;
-                drop(right_guard);
-                drop(left_guard);
                 let mut es = events.lock().unwrap();
                 es.push(Event::FinishedEating(self.id, left_id, right_id));
+                drop(right_guard);
+                drop(left_guard);
                 drop(es);
             }
         }
